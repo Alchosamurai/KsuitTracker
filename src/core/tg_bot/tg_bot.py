@@ -32,10 +32,10 @@ def send_welcome(message):
     User.create(message.from_user.username, chat_id)
     bot.reply_to(message, f"""
 Привет, {message.from_user.username}!
-Инструкция:\n
+*Инструкция*:\n
 1) Просто при закрытии задачи отправь в чат время, которое указывается в заявке в ксуите, в формате ЧЧ:ММ или ЧЧ ММ\n
 2) Бот сам рассчитает, сколько еще часов за сегодня осталось закрыть, чтобы не объебаться в конце месяца
-""", reply_markup=create_keyboard())
+""", reply_markup=create_keyboard(),parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: message.text == "Статистика за сегодня 📊")
 def send_today_stats(message):
@@ -44,10 +44,10 @@ def send_today_stats(message):
     tasks = Task.today_user_stats(message.chat.id)
     total_time = timedelta(seconds=0)
     for task in tasks:
-        response += f"{task.hour}:{task.min} в {task.datetime.hour}:{task.datetime.minute}\n"
+        response += f"{task.hour:02}:{task.min:02} в {task.datetime.hour:02}:{task.datetime.minute:02}\n"
         total_time += timedelta(hours=task.hour, minutes=task.min)
-    response += f"Общее время: {time_options.timedelta_to_hhmm(total_time)}"
-    bot.reply_to(message, response)
+    response += f"*Общее время*: {time_options.timedelta_to_hhmm(total_time)}"
+    bot.reply_to(message, response, parse_mode='Markdown', reply_markup=create_keyboard())
 
 
 @bot.message_handler(func=lambda message: time_pattern.match(message.text))
