@@ -9,6 +9,7 @@ import re
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime, timedelta
 import logging  
+import calendar
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,  # Уровень логирования (INFO, DEBUG, WARNING, ERROR, CRITICAL)
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(config.TG_BOT_TOKEN, parse_mode=None)
 user_states = {}
 time_pattern = re.compile(r'^([0-1]?[0-9]|2[0-3])[: ]([0-5][0-9])$')
+weekdays = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
 
 
 #* START *
@@ -70,6 +72,31 @@ def send_today_stats(message):
     response += f"\n*Осталось*: {time_options.timedelta_to_hhmm(user_target_timedelta - total_time)}"
     bot.reply_to(message, response, parse_mode='Markdown', reply_markup=create_keyboard())
 
+@bot.message_handler(func=lambda message: message.text == "Статистика за весь месяц 🗓️")
+def send_month_stats(message):
+    logger.info(f"User {message.from_user.username} (chat_id: {message.chat.id}) requested month's statistics.")  
+    response = ""
+    user = User.get(message.chat.id)
+    response += f"*Цель за месяц:* {user.monthly_target_hour:02} часов\n"
+    response += f"*Цель за день:* {user.daily_target_hour:02} часов {user.daily_target_min:02} минут\n"
+    response += "*Статистика в этом месяце:* \n"
+    now = datetime.now()
+    current_year = now.year
+    current_month = now.month
+    _, num_days = calendar.monthrange(current_year, current_month)
+    days_in_month = [datetime(current_year, current_month, day) for day in range(1, num_days + 1)]
+    month_tracker = timedelta(seconds=0)
+    for day in days_in_month:
+        tasks = Task.get_current_time_by_date(message.chat.id, day)
+        if tasks > timedelta(seconds=0):
+            response += f"*{weekdays[day.weekday()]} {day.day:02}.{day.month:02}*: {tasks}\n"
+            month_tracker += tasks
+    response += f"*Общее время*: {time_options.timedelta_to_hhmm(month_tracker)}"
+    response += f"\n*Осталось*: {time_options.timedelta_to_hhmm(timedelta(hours=user.monthly_target_hour) - month_tracker)}"
+    if month_tracker > timedelta(hours=user.monthly_target_hour):
+        response += "\n✅*Цель выполнена!*✅"
+    bot.reply_to(message, response, parse_mode='Markdown', reply_markup=create_keyboard())
+
 #* SETTINGS *
 @bot.message_handler(func=lambda message: message.text == "Настройки ⚙️")
 def set_settings(message):
@@ -102,11 +129,16 @@ def callback_query(call):
         bot.answer_callback_query(call.id, "🤡")
 
 
-@bot.message_handler(func=lambda message: user_states[message.chat.id] == "setting")
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id, None) == "setting")
 def set_settings(message):
     user = User.get(message.chat.id)
-    text = message.text.replace(' ', ':')
-    text = text.split(':')
+    try:
+        text = message.text.replace(' ', ':')
+        text = text.split(':')
+        text = [int(i) for i in text]
+    except:
+        bot.send_message(message.chat.id, "Смотри в пример выше 🤡")
+        return
     if user:
         user = User.update(message.chat.id, daily_target_hour=int(text[0]), daily_target_min=int(text[1]), monthly_target_hour=int(text[2]))
         bot.send_message(message.chat.id, "Настройки сохранены!")
@@ -120,7 +152,7 @@ def send_message_to_chat(chat_id: int, text: str):
     :param text: Текст сообщения
     """
     try:
-        bot.send_message(chat_id, text)
+        bot.send_message(chat_id, text, parse_mode='Markdown')
         logger.info(f"Сообщение отправлено в чат {chat_id}.")
     except Exception as e:
         logger.info(f"Ошибка при отправке сообщения: {e}")
@@ -142,11 +174,11 @@ def create_keyboard():
     """
     Создает Reply-клавиатуру с одной кнопкой.
     """
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)  # Автоматическое изменение размера клавиатуры
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)  
     today_stat_button = KeyboardButton("Статистика за сегодня 📊")
+    month_stat_button = KeyboardButton("Статистика за весь месяц 🗓️")  
     settings_button = KeyboardButton("Настройки ⚙️") #🛠
-    #button2 = KeyboardButton("Статистика за весь месяц 📊📊📊")  # Текст на кнопке
-    keyboard.add(today_stat_button)
+    keyboard.add(today_stat_button, month_stat_button)
     keyboard.add(settings_button)
     #keyboard.add(button2)  # Добавляем кнопку в клавиатуру
     return keyboard
